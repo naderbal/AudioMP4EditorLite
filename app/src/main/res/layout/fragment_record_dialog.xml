@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="30dp"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <Button
+        android:id="@+id/btnRecord"
+        android:layout_width="84dp"
+        android:layout_height="84dp"
+        android:background="@drawable/circular_record_button_green"
+
+        android:layout_marginTop="40dp"
+        android:layout_gravity="center"
+        android:gravity="bottom|center_horizontal"
+        tools:text="0:00" />
+    <LinearLayout
+        android:id="@+id/llRecorded"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_gravity="center"
+        android:layout_margin="16dp"
+        android:layout_below="@+id/btnRecord">
+        <Button
+           android:id="@+id/btnSaveRecorded"
+           android:layout_width="wrap_content"
+           android:layout_height="wrap_content"
+           android:layout_centerVertical="true"
+           android:text="Save"/>
+        <Button
+            android:id="@+id/btnCancelRecorded"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerVertical="true"
+            android:layout_marginLeft="6dp"
+            android:text="Cancel"/>
+
+    </LinearLayout>
+</LinearLayout>
