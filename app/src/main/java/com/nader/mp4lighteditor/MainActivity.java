@@ -9,15 +9,18 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.media.MediaMetadataRetriever;
+import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
+import android.os.Handler;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.support.annotation.RequiresApi;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -67,18 +70,41 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private Button btnAdd;
     private Button btnSubtract;
     private TextView tvSavedFile;
+    private Button btnLoopedPlayAudio;
+    private Button btnChosenFilePlayAudio;
+    private MediaPlayer mediaPlayer;
+    private SeekBar seekChosenAudio;
+    private SeekBar seekLoopedAudio;
+    private Handler myHandler;
+    public mediaPlayerFileState mediaPlayerState;
+    public enum mediaPlayerFileState{
+        SAVED_AUDIO,LOOPED_AUDIO
+    }
+
     private OnRecordingSavedListener listener = new OnRecordingSavedListener() {
         @Override
         public void onSaved(String filePath) {
             fileSrc = filePath;
             fileToTrim = filePath;
             updateChosenFileText(fileSrc);
+            handleFileChosenMediaPlayer();
             int fileDuration = getAudioFileDuration(fileSrc);
-            //updates seekBars maximum value according to duration of recorded file
+            //updates seekBars maximum value according to duration of recorded file,up to 90% of the file's duration
             configureSeekBars(fileDuration - (int)(fileDuration*0.1));
             setTrimAndLoopClickability(true);
         }
     };
+
+    /**
+     * Handles media player when file is chosen or recorded
+     */
+    private void handleFileChosenMediaPlayer() {
+        mediaPlayerState = mediaPlayerFileState.SAVED_AUDIO;
+        mediaPlayer(fileSrc);
+        seekChosenAudio.setMax(mediaPlayer.getDuration());
+        btnChosenFilePlayAudio.setEnabled(true);
+        btnLoopedPlayAudio.setEnabled(false);
+    }
 
     /**
      * Syncs time with nearest sample, since trim can only be done from the start of a sample
@@ -254,7 +280,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         setContentView(R.layout.activity_main);
         init();
     }
-
+    boolean isChosenPlaying = false;
+    boolean isLoopedPlaying = false;
     private void init() {
         btnRecordAudio = (Button) findViewById(R.id.btnRecordAudio);
         btnRecordAudio.setOnClickListener(this);
@@ -263,6 +290,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         btnTrimAndLoop = (Button) findViewById(R.id.btnTrimAndLoop);
         btnTrimAndLoop.setOnClickListener(this);
         tvChosenFile = (TextView) findViewById(R.id.tvChosenFile);
+        seekChosenAudio = (SeekBar) findViewById(R.id.seekPlayChosenAudio);
+
+        seekChosenAudio.setClickable(false);
+        seekLoopedAudio = (SeekBar) findViewById(R.id.seekPlayLoopedAudio);
+
+        seekLoopedAudio.setClickable(false);
         llCosenFile = (LinearLayout) findViewById(R.id.frmChosenFile);
         tvLoop = (TextView) findViewById(R.id.tvLoop);
         txtSeekStart = (TextView) findViewById(R.id.txtSeekStart);
@@ -272,6 +305,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         btnAdd.setOnClickListener(this);
         btnSubtract = (Button) findViewById(R.id.btnSubtract);
         btnSubtract.setOnClickListener(this);
+        myHandler = new Handler();
         seekBarStartTime.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
@@ -310,8 +344,79 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             }
         });
         tvSavedFile = (TextView) findViewById(R.id.tvSavedFile);
+        btnLoopedPlayAudio = (Button) findViewById(R.id.btnLoopedPlayAudio);
+        btnLoopedPlayAudio.setEnabled(false);
+        btnLoopedPlayAudio.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                handlePlayClicked();
+                if (!isLoopedPlaying) {
+                    btnLoopedPlayAudio.setBackgroundResource(R.drawable.ic_pause_black_24dp);
+                    isLoopedPlaying = true;
+                }else {
+                    btnLoopedPlayAudio.setBackgroundResource(R.drawable.ic_play_arrow_black_24dp);
+                    isLoopedPlaying = false;
+                }
+            }
+        });
+
+        btnChosenFilePlayAudio = (Button) findViewById(R.id.btnChosenFilePlayAudio);
+        btnChosenFilePlayAudio.setEnabled(false);
+        btnChosenFilePlayAudio.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                handlePlayClicked();
+                if (!isChosenPlaying) {
+                    btnChosenFilePlayAudio.setBackgroundResource(R.drawable.ic_pause_black_24dp);
+                    isChosenPlaying = true;
+                }else {
+                    btnChosenFilePlayAudio.setBackgroundResource(R.drawable.ic_play_arrow_black_24dp);
+                    isChosenPlaying = false;
+                }
+            }
+        });
         setTrimAndLoopClickability(false);
     }
+
+    private void handlePlayClicked() {
+        myHandler.postDelayed(UpdateSongTime,100);
+        if (mediaPlayer.isPlaying()){
+            mediaPlayer.pause();
+        }
+        else {
+            mediaPlayer.start();
+        }
+    }
+    int runnableCounter = 0;
+    private Runnable UpdateSongTime = new Runnable() {
+        public void run() {
+            if (runnableCounter <= mediaPlayer.getDuration()) {
+                if ((isChosenPlaying || isLoopedPlaying)) {
+                    int mediaPlayerPosition = mediaPlayer.getCurrentPosition();
+                    if (mediaPlayerState == mediaPlayerFileState.SAVED_AUDIO) {
+                        seekChosenAudio.setProgress(mediaPlayerPosition);
+                    } else {
+                        seekLoopedAudio.setProgress(mediaPlayerPosition);
+                    }
+                    myHandler.postDelayed(this, 100);
+                    runnableCounter += 100;
+                    Log.i("sas", "runnable" + runnableCounter);
+                }
+            }
+            else{
+                if (mediaPlayerState == mediaPlayerFileState.SAVED_AUDIO){
+                    seekChosenAudio.setProgress(0);
+                    isChosenPlaying = false;
+                    btnChosenFilePlayAudio.setBackgroundResource(R.drawable.ic_play_arrow_black_24dp);
+                } else {
+                    seekLoopedAudio.setProgress(0);
+                    isLoopedPlaying = false;
+                    btnLoopedPlayAudio.setBackgroundResource(R.drawable.ic_play_arrow_black_24dp);
+                }
+                runnableCounter = 0;
+            }
+        }
+    };
 
     @Override
     public void onClick(View view) {
@@ -552,6 +657,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 container.writeContainer(fc);
                 Toast.makeText(this, "File was saved", Toast.LENGTH_SHORT).show();
                 tvSavedFile.setText("File Saved: "+outputFile.getPath());
+                handleFileLoopedMediaPlayer(outputFile);
+
             } catch (Exception e) {
                 Toast.makeText(this, "File failed to be saved", Toast.LENGTH_SHORT).show();
             }
@@ -560,6 +667,15 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             } catch (IOException e) {
                 e.printStackTrace();
             }
+    }
+
+    private void handleFileLoopedMediaPlayer(File outputFile) {
+        mediaPlayerState = mediaPlayerFileState.LOOPED_AUDIO;
+        //init media player
+        mediaPlayer(outputFile.getPath());
+        seekLoopedAudio.setMax(mediaPlayer.getDuration());
+        btnChosenFilePlayAudio.setEnabled(false);
+        btnLoopedPlayAudio.setEnabled(true);
     }
 
     /**
@@ -590,6 +706,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 fileToTrim = fileSrc;
                 //update chosen file textView with filesrc
                 updateChosenFileText(fileSrc);
+                handleFileChosenMediaPlayer();
                 int fileDuration = getAudioFileDuration(fileSrc);
                 configureSeekBars(fileDuration - (int)(fileDuration*0.1));
                 // update trimAndLoop buttons to clickable
@@ -627,6 +744,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             // nothing to be done
         }
         return duration;
+    }
+
+    private void mediaPlayer(String filePath){
+        if (mediaPlayer != null) {
+            mediaPlayer.reset();
+        }
+        mediaPlayer = MediaPlayer.create(this, Uri.fromFile(new File(filePath)));
+
     }
 
     /**
