@@ -1,14 +1,11 @@
 package com.nader.mp4lighteditor;
 
 import android.Manifest;
-import android.app.Activity;
 import android.app.FragmentManager;
 import android.content.ContentUris;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.database.Cursor;
-import android.media.MediaMetadataRetriever;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
@@ -17,143 +14,94 @@ import android.os.Handler;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.support.annotation.RequiresApi;
-import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
-import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.SeekBar;
 import android.widget.TextView;
-import android.widget.Toast;
-
-import com.coremedia.iso.boxes.Container;
-import com.googlecode.mp4parser.authoring.Movie;
-import com.googlecode.mp4parser.authoring.Track;
-import com.googlecode.mp4parser.authoring.builder.DefaultMp4Builder;
-import com.googlecode.mp4parser.authoring.container.mp4.MovieCreator;
-import com.googlecode.mp4parser.authoring.tracks.AppendTrack;
-import com.googlecode.mp4parser.authoring.tracks.CroppedTrack;
-
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.RandomAccessFile;
-import java.nio.channels.FileChannel;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.LinkedList;
-import java.util.List;
 
 public class MainActivity extends AppCompatActivity implements View.OnClickListener {
-    private static final String TRIMMED_FILE = "outputAfterTrim.mp4";
-    private static final String LOOPED_FILE = "loopedAfterTrim.mp4";
-    private static final int REQUEST_EXTERNAL_STORAGE = 1;
     private static final int PICKFILE_RESULT_CODE = 10;
-    private static String[] PERMISSIONS_STORAGE = {
-            Manifest.permission.READ_EXTERNAL_STORAGE,
-            Manifest.permission.WRITE_EXTERNAL_STORAGE
-    };
-    private static String fileToTrim = "audioMP4.mp4";
+
     private Button btnRecordAudio;
     private Button btnChooseFile;
-    private Button btnTrimAndLoop;
     private TextView tvChosenFile;
-    private LinearLayout llCosenFile;
-    private TextView tvLoop;
     private String fileSrc;
-    private SeekBar seekBarStartTime;
-    private SeekBar seekBarEndTime;
-    private TextView txtSeekStart;
-    private TextView txtSeekEnd;
-    private Button btnAdd;
-    private Button btnSubtract;
-    private TextView tvSavedFile;
-    private Button btnLoopedPlayAudio;
     private Button btnChosenFilePlayAudio;
     private MediaPlayer mediaPlayer;
     private SeekBar seekChosenAudio;
-    private SeekBar seekLoopedAudio;
     private Handler myHandler;
-    public mediaPlayerFileState mediaPlayerState;
-    public enum mediaPlayerFileState{
-        SAVED_AUDIO,LOOPED_AUDIO
-    }
-
+    private Button btnTrimAndLoop;
+    private TextView tvAudioCurrentPosition;
+    boolean isAudioFilePlaying = false;
     private OnRecordingSavedListener listener = new OnRecordingSavedListener() {
         @Override
         public void onSaved(String filePath) {
             fileSrc = filePath;
-            fileToTrim = filePath;
+            btnTrimAndLoop.setEnabled(true);
             updateChosenFileText(fileSrc);
             handleFileChosenMediaPlayer();
-            int fileDuration = getAudioFileDuration(fileSrc);
-            //updates seekBars maximum value according to duration of recorded file,up to 90% of the file's duration
-            configureSeekBars(fileDuration - (int)(fileDuration*0.1));
-            setTrimAndLoopClickability(true);
         }
     };
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        init();
+    }
+
+
+    private void init() {
+        btnRecordAudio = (Button) findViewById(R.id.btnRecordAudio);
+        btnRecordAudio.setOnClickListener(this);
+        btnChooseFile = (Button) findViewById(R.id.btnChooseFile);
+        btnChooseFile.setOnClickListener(this);
+        btnTrimAndLoop = (Button) findViewById(R.id.btnTrimAndLoop);
+        btnTrimAndLoop.setEnabled(false);
+        btnTrimAndLoop.setOnClickListener(this);
+        tvChosenFile = (TextView) findViewById(R.id.tvChosenFile);
+        seekChosenAudio = (SeekBar) findViewById(R.id.seekPlayChosenAudio);
+        seekChosenAudio.setClickable(false);
+        myHandler = new Handler();
+        btnChosenFilePlayAudio = (Button) findViewById(R.id.btnChosenFilePlayAudio);
+        setPlayButtonEnabled(false);
+        btnChosenFilePlayAudio.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                handlePlayClicked();
+                if (!isAudioFilePlaying) {
+                    btnChosenFilePlayAudio.setBackgroundResource(R.drawable.ic_pause_black_24dp);
+                    isAudioFilePlaying = true;
+                }else {
+                    btnChosenFilePlayAudio.setBackgroundResource(R.drawable.ic_play_arrow_black_24dp);
+                    isAudioFilePlaying = false;
+                }
+            }
+        });
+        tvAudioCurrentPosition = (TextView) findViewById(R.id.tvAudioCurrentPosition);
+        tvAudioCurrentPosition.setText("0.0s");
+    }
+
+    /**
+     * Sets play button to enabled or not.
+     */
+    private void setPlayButtonEnabled(boolean enabled) {
+        if (enabled) btnChosenFilePlayAudio.setBackgroundResource(R.drawable.ic_play_arrow_black_24dp);
+        else btnChosenFilePlayAudio.setBackgroundResource(R.drawable.ic_play_arrow_faded_24dp);
+        btnChosenFilePlayAudio.setEnabled(enabled);
+    }
 
     /**
      * Handles media player when file is chosen or recorded
      */
     private void handleFileChosenMediaPlayer() {
-        mediaPlayerState = mediaPlayerFileState.SAVED_AUDIO;
-        mediaPlayer(fileSrc);
+        resetMediaPlayer(fileSrc);
         seekChosenAudio.setMax(mediaPlayer.getDuration());
-        btnChosenFilePlayAudio.setEnabled(true);
-        btnLoopedPlayAudio.setEnabled(false);
-    }
-
-    /**
-     * Syncs time with nearest sample, since trim can only be done from the start of a sample
-     */
-    private static double correctTimeToSyncSample(Track track, double cutHere, boolean next) {
-        double[] timeOfSyncSamples = new double[track.getSyncSamples().length];
-        long currentSample = 0;
-        double currentTime = 0;
-        for (int i = 0; i < track.getSampleDurations().length; i++) {
-            long delta = track.getSampleDurations()[i];
-
-            if (Arrays.binarySearch(track.getSyncSamples(), currentSample + 1) >= 0) {
-                // samples always start with 1 but we start with zero therefore +1
-                timeOfSyncSamples[Arrays.binarySearch(track.getSyncSamples(), currentSample + 1)] = currentTime;
-            }
-            currentTime += (double) delta / (double) track.getTrackMetaData().getTimescale();
-            currentSample++;
-
-        }
-        double previous = 0;
-        for (double timeOfSyncSample : timeOfSyncSamples) {
-            if (timeOfSyncSample > cutHere) {
-                if (next) {
-                    return timeOfSyncSample;
-                } else {
-                    return previous;
-                }
-            }
-            previous = timeOfSyncSample;
-        }
-        return timeOfSyncSamples[timeOfSyncSamples.length - 1];
-    }
-
-    /**
-     * Checks if the app has permission to write to device storage
-     * If the app does not has permission then the user will be prompted to grant permissions
-     */
-    public static void verifyStoragePermissions(Activity activity) {
-        // Check if we have write permission
-        int permission = ActivityCompat.checkSelfPermission(activity, Manifest.permission.WRITE_EXTERNAL_STORAGE);
-
-        if (permission != PackageManager.PERMISSION_GRANTED) {
-            // We don't have permission so prompt the user
-            ActivityCompat.requestPermissions(
-                    activity,
-                    PERMISSIONS_STORAGE,
-                    REQUEST_EXTERNAL_STORAGE
-            );
-        }
+        setPlayButtonEnabled(true);
     }
 
     /**
@@ -162,16 +110,13 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
      */
     @RequiresApi(api = Build.VERSION_CODES.KITKAT)
     public static String getPath(final Context context, final Uri uri) {
-
         final boolean isKitKat = Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT;
-
         if (isKitKat && DocumentsContract.isDocumentUri(context, uri)) {
             // ExternalStorageProvider
             if (isExternalStorageDocument(uri)) {
                 final String docId = DocumentsContract.getDocumentId(uri);
                 final String[] split = docId.split(":");
                 final String type = split[0];
-
                 if ("primary".equalsIgnoreCase(type)) {
                     return Environment.getExternalStorageDirectory() + "/" + split[1];
                 }
@@ -189,7 +134,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 final String docId = DocumentsContract.getDocumentId(uri);
                 final String[] split = docId.split(":");
                 final String type = split[0];
-
                 Uri contentUri = null;
                 if ("image".equals(type)) {
                     contentUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
@@ -198,12 +142,10 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 } else if ("audio".equals(type)) {
                     contentUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
                 }
-
                 final String selection = "_id=?";
                 final String[] selectionArgs = new String[]{
                         split[1]
                 };
-
                 return getDataColumn(context, contentUri, selection, selectionArgs);
             }
         }
@@ -215,7 +157,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         else if ("file".equalsIgnoreCase(uri.getScheme())) {
             return uri.getPath();
         }
-
         return null;
     }
 
@@ -274,145 +215,54 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         return "com.android.providers.media.documents".equals(uri.getAuthority());
     }
 
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
-        init();
-    }
-    boolean isChosenPlaying = false;
-    boolean isLoopedPlaying = false;
-    private void init() {
-        btnRecordAudio = (Button) findViewById(R.id.btnRecordAudio);
-        btnRecordAudio.setOnClickListener(this);
-        btnChooseFile = (Button) findViewById(R.id.btnChooseFile);
-        btnChooseFile.setOnClickListener(this);
-        btnTrimAndLoop = (Button) findViewById(R.id.btnTrimAndLoop);
-        btnTrimAndLoop.setOnClickListener(this);
-        tvChosenFile = (TextView) findViewById(R.id.tvChosenFile);
-        seekChosenAudio = (SeekBar) findViewById(R.id.seekPlayChosenAudio);
 
-        seekChosenAudio.setClickable(false);
-        seekLoopedAudio = (SeekBar) findViewById(R.id.seekPlayLoopedAudio);
-
-        seekLoopedAudio.setClickable(false);
-        llCosenFile = (LinearLayout) findViewById(R.id.frmChosenFile);
-        tvLoop = (TextView) findViewById(R.id.tvLoop);
-        txtSeekStart = (TextView) findViewById(R.id.txtSeekStart);
-        txtSeekEnd = (TextView) findViewById(R.id.txtSeekEnd);
-        seekBarStartTime = (SeekBar) findViewById(R.id.seekStart);
-        btnAdd = (Button) findViewById(R.id.btnAdd);
-        btnAdd.setOnClickListener(this);
-        btnSubtract = (Button) findViewById(R.id.btnSubtract);
-        btnSubtract.setOnClickListener(this);
-        myHandler = new Handler();
-        seekBarStartTime.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
-                //convert i which is in value of milliseconds to seconds with one decimal
-                int value = i/100;
-                txtSeekStart.setText(value/10.0+"s");
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {
-
-            }
-
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {
-
-            }
-        });
-        seekBarEndTime = (SeekBar) findViewById(R.id.seekEnd);
-        seekBarEndTime.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
-                //convert i which is in value of milliseconds to seconds with one decimal
-                int value = i/100;
-                txtSeekEnd.setText(value/10.0+"s");
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {
-
-            }
-
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {
-
-            }
-        });
-        tvSavedFile = (TextView) findViewById(R.id.tvSavedFile);
-        btnLoopedPlayAudio = (Button) findViewById(R.id.btnLoopedPlayAudio);
-        btnLoopedPlayAudio.setEnabled(false);
-        btnLoopedPlayAudio.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                handlePlayClicked();
-                if (!isLoopedPlaying) {
-                    btnLoopedPlayAudio.setBackgroundResource(R.drawable.ic_pause_black_24dp);
-                    isLoopedPlaying = true;
-                }else {
-                    btnLoopedPlayAudio.setBackgroundResource(R.drawable.ic_play_arrow_black_24dp);
-                    isLoopedPlaying = false;
-                }
-            }
-        });
-
-        btnChosenFilePlayAudio = (Button) findViewById(R.id.btnChosenFilePlayAudio);
-        btnChosenFilePlayAudio.setEnabled(false);
-        btnChosenFilePlayAudio.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                handlePlayClicked();
-                if (!isChosenPlaying) {
-                    btnChosenFilePlayAudio.setBackgroundResource(R.drawable.ic_pause_black_24dp);
-                    isChosenPlaying = true;
-                }else {
-                    btnChosenFilePlayAudio.setBackgroundResource(R.drawable.ic_play_arrow_black_24dp);
-                    isChosenPlaying = false;
-                }
-            }
-        });
-        setTrimAndLoopClickability(false);
-    }
-
+    /**
+     * Handles the actions of pressing the media play button.
+     */
     private void handlePlayClicked() {
-        myHandler.postDelayed(UpdateSongTime,100);
+        //run updateTrackTime after 100ms
+        myHandler.postDelayed(UpdateTrackTime, 100);
+        //if already playing, pause
         if (mediaPlayer.isPlaying()){
             mediaPlayer.pause();
         }
+        //else start from from beginning or last time paused
         else {
             mediaPlayer.start();
         }
     }
+
     int runnableCounter = 0;
-    private Runnable UpdateSongTime = new Runnable() {
+    private Runnable UpdateTrackTime = new Runnable() {
         public void run() {
+            //if time passed is less than the track's duration
             if (runnableCounter <= mediaPlayer.getDuration()) {
-                if ((isChosenPlaying || isLoopedPlaying)) {
+                //if the track is running
+                if ((isAudioFilePlaying)) {
+                    //get current position of the track
                     int mediaPlayerPosition = mediaPlayer.getCurrentPosition();
-                    if (mediaPlayerState == mediaPlayerFileState.SAVED_AUDIO) {
-                        seekChosenAudio.setProgress(mediaPlayerPosition);
-                    } else {
-                        seekLoopedAudio.setProgress(mediaPlayerPosition);
-                    }
+                    //change the ms to seconds with one decimal and set value to the text view of the seek bar
+                    int value = mediaPlayerPosition/100;
+                    tvAudioCurrentPosition.setText(value / 10.0 + "s");
+                    //update process of seek bar
+                    seekChosenAudio.setProgress(mediaPlayerPosition);
+                    //re run after 100ms delay
                     myHandler.postDelayed(this, 100);
+                    //increment counter by 100 (100ms)
                     runnableCounter += 100;
-                    Log.i("sas", "runnable" + runnableCounter);
                 }
             }
             else{
-                if (mediaPlayerState == mediaPlayerFileState.SAVED_AUDIO){
-                    seekChosenAudio.setProgress(0);
-                    isChosenPlaying = false;
-                    btnChosenFilePlayAudio.setBackgroundResource(R.drawable.ic_play_arrow_black_24dp);
-                } else {
-                    seekLoopedAudio.setProgress(0);
-                    isLoopedPlaying = false;
-                    btnLoopedPlayAudio.setBackgroundResource(R.drawable.ic_play_arrow_black_24dp);
-                }
+                //else the track reached it's end
+                //set seek bar to start
+                seekChosenAudio.setProgress(0);
+                //set text of text view of the seek bar to 0.0s
+                tvAudioCurrentPosition.setText("0.0s");
+                //change value of is playing to false
+                isAudioFilePlaying = false;
+                //change icon from pause to play
+                btnChosenFilePlayAudio.setBackgroundResource(R.drawable.ic_play_arrow_black_24dp);
+                //set counter to 0
                 runnableCounter = 0;
             }
         }
@@ -428,54 +278,18 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 chooseFile();
                 break;
             case R.id.btnTrimAndLoop:
-                handleTrimAndLoopButtonClick();
-                break;
-            case R.id.btnAdd:
-                addToLoop();
-                break;
-            case R.id.btnSubtract:
-                subtractFromLoop();
+                handleTrimAndLoopBtnClicked();
                 break;
         }
     }
 
     /**
-     * Subtracts one from the value of the loop field.
+     * Handles click of TrimAndLoop button.
      */
-    private void subtractFromLoop() {
-        int tvLoopNumber = Integer.valueOf(tvLoop.getText().toString());
-        if (tvLoopNumber == 0) return;
-        tvLoop.setText(--tvLoopNumber+"");
-    }
-
-    /**
-     * Adds one to the value of the loop field.
-     */
-    private void addToLoop() {
-        int tvLoopNumber = Integer.valueOf(tvLoop.getText().toString());
-        tvLoop.setText(++tvLoopNumber+"");
-    }
-
-    /**
-     * Handles trim and loop button click.
-     */
-    private void handleTrimAndLoopButtonClick() {
-        if (fileSrc == null) {
-            //if fileSource null tell the user to record an audio or choose a file
-            Toast.makeText(this, "Please record an audio or choose a file", Toast.LENGTH_SHORT).show();
-            return;
-        }
-            int fileDuration = getAudioFileDuration(fileSrc);
-
-            double trimFromStartTime = 0;
-            double trimFromEndTime = 0;
-            trimFromStartTime = seekBarStartTime.getProgress();
-            trimFromEndTime = seekBarEndTime.getProgress();
-            //trim file from start time to end time
-            double endTime = fileDuration - trimFromEndTime;
-            trimFile(fileToTrim, trimFromStartTime/1000.0, endTime/1000.0);
-            //loop file
-            loopFile(TRIMMED_FILE);
+    private void handleTrimAndLoopBtnClicked() {
+        Intent intent = new Intent(this, TrimAndLoopActivity.class);
+        intent.putExtra("fileSrc",fileSrc);
+        startActivity(intent);
     }
 
     /**
@@ -490,192 +304,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         dialogFragment.show(fm, "Sample Fragment");
         //pass listener to dialogFragment
         dialogFragment.setListener(listener);
-    }
-
-    /**
-     * Sets trim and loop views clickability.
-     * True if clickable, false otherwise.
-     */
-    public void setTrimAndLoopClickability(boolean state) {
-        //set trimAndLoop button, startTime endTime seekbars, addBtn and subtractBtn to state
-        btnTrimAndLoop.setEnabled(state);
-        seekBarStartTime.setEnabled(state);
-        seekBarEndTime.setEnabled(state);
-        btnAdd.setEnabled(state);
-        btnSubtract.setEnabled(state);
-    }
-
-    /**
-     * Trims a file to get a result of the file from startTime to endTime.
-     */
-    private void trimFile(String inputFilePath, double startTime, double endTime) {
-        try {
-            // get file from memory
-            File dir = new File(Environment.getExternalStorageDirectory(), "/mp4Test/");
-            dir.mkdirs();
-            File inputFile = new File(inputFilePath);
-            // create movie from the file
-            Movie movie = MovieCreator.build(inputFile.getPath());
-
-            // get tracks from movie
-            List<Track> tracks = movie.getTracks();
-            movie.setTracks(new LinkedList<Track>());
-
-            //start time which will be updated according to samples
-            double startTimeAfterSync = startTime;
-            //end time which will be updated according to samples
-            double endTimeAfterSync = endTime;
-
-            boolean timeCorrected = false;
-
-            // Here we try to find a track that has sync samples. Since we can only start decoding
-            // at such a sample we SHOULD make sure that the start of the new fragment is exactly
-            // such a frame
-            for (Track track : tracks) {
-                if (track.getSyncSamples() != null && track.getSyncSamples().length > 0) {
-                    if (timeCorrected) {
-                        // This exception here could be a false positive in case we have multiple tracks
-                        // with sync samples at exactly the same positions. E.g. a single movie containing
-                        // multiple qualities of the same video (Microsoft Smooth Streaming file)
-
-                        throw new RuntimeException("The startTime has already been corrected by another track with SyncSample. Not Supported.");
-                    }
-                    startTimeAfterSync = correctTimeToSyncSample(track, startTimeAfterSync, false);
-                    endTimeAfterSync = correctTimeToSyncSample(track, endTimeAfterSync, true);
-                    timeCorrected = true;
-                }
-            }
-
-            for (Track track : tracks) {
-                long currentSample = 0;
-                double currentTime = 0;
-                double lastTime = -1;
-                long startSample1 = -1;
-                long endSample1 = -1;
-
-                for (int i = 0; i < track.getSampleDurations().length; i++) {
-                    long delta = track.getSampleDurations()[i];
-                    if (currentTime > lastTime && currentTime <= startTimeAfterSync) {
-                        // current sample is still before the new starttime
-                        startSample1 = currentSample;
-                    }
-                    if (currentTime > lastTime && currentTime <= endTimeAfterSync) {
-                        // current sample is after the new start time and still before the new endtime
-                        endSample1 = currentSample;
-                    }
-                    lastTime = currentTime;
-                    currentTime += (double) delta / (double) track.getTrackMetaData().getTimescale();
-                    currentSample++;
-                }
-                movie.addTrack(new AppendTrack(new CroppedTrack(track, startSample1, endSample1)));
-            }
-            long start1 = System.currentTimeMillis();
-            Container out = new DefaultMp4Builder().build(movie);
-            long start2 = System.currentTimeMillis();
-            File output = new File(dir + "/" + TRIMMED_FILE);
-            if (output.exists()) {
-                output.delete();
-            }
-            FileOutputStream fos = new FileOutputStream(dir + "/" + TRIMMED_FILE); //String.format("output-%f-%f.mp4", startTime1, endTime1)
-            FileChannel fc = fos.getChannel();
-            out.writeContainer(fc);
-
-            fc.close();
-            fos.close();
-            long start3 = System.currentTimeMillis();
-            System.err.println("Building IsoFile took : " + (start2 - start1) + "ms");
-            System.err.println("Writing IsoFile took  : " + (start3 - start2) + "ms");
-
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    /**
-     * Creates a loop of the given audio file according to the given loop number.
-     */
-    private void loopFile(String inputFilePath) {
-        verifyStoragePermissions(this);
-        String tvLoopString = tvLoop.getText().toString();
-
-        int loopNumber = Integer.valueOf(tvLoopString);
-        if (loopNumber == 0) {
-            Toast.makeText(this,"Please Enter Number Greater than 0",Toast.LENGTH_SHORT).show();
-            return;
-        }
-            File dir = new File(Environment.getExternalStorageDirectory(), "/mp4Test/");
-            dir.mkdirs();
-            //file which we will work on
-            File inputFile = new File(dir, inputFilePath);
-            //file to be saved
-            File outputFile = new File(dir, LOOPED_FILE);
-            // create movie from input file
-            Movie inputMovie = null;
-            try {
-                inputMovie = MovieCreator.build(inputFile.getAbsolutePath());
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-            // create array of input movies
-            Movie[] inputMovies = new Movie[loopNumber];
-            for (int i = 0; i < loopNumber; i++) {
-                inputMovies[i] = inputMovie;
-            }
-            // create output movie
-            final Movie outputMovie = new Movie();
-            // create audio tracks
-            List<Track> audioTracks = new ArrayList<>();
-            for (Movie movie : inputMovies) {
-                if (movie != null) {
-                    for (Track track : movie.getTracks()) {
-                        if (track.getHandler().equals("soun")) {
-                            audioTracks.add(track);
-                        }
-                    }
-                }
-            }
-            // add audio tracks to output movie
-            try {
-                outputMovie.addTrack(new AppendTrack(audioTracks.toArray(new Track[audioTracks.size()])));
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-            // save output to file
-            Container container = null;
-            try {
-                container = new DefaultMp4Builder().build(outputMovie);
-            } catch (Exception e) {
-
-            }
-            FileChannel fc = null;
-            try {
-                fc = new RandomAccessFile(outputFile, "rw").getChannel();
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-            try {
-                container.writeContainer(fc);
-                Toast.makeText(this, "File was saved", Toast.LENGTH_SHORT).show();
-                tvSavedFile.setText("File Saved: "+outputFile.getPath());
-                handleFileLoopedMediaPlayer(outputFile);
-
-            } catch (Exception e) {
-                Toast.makeText(this, "File failed to be saved", Toast.LENGTH_SHORT).show();
-            }
-            try {
-                fc.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-    }
-
-    private void handleFileLoopedMediaPlayer(File outputFile) {
-        mediaPlayerState = mediaPlayerFileState.LOOPED_AUDIO;
-        //init media player
-        mediaPlayer(outputFile.getPath());
-        seekLoopedAudio.setMax(mediaPlayer.getDuration());
-        btnChosenFilePlayAudio.setEnabled(false);
-        btnLoopedPlayAudio.setEnabled(true);
     }
 
     /**
@@ -703,22 +331,13 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 Uri uri = data.getData();
                 //get file path of the uri
                 fileSrc = getPath(this, uri);
-                fileToTrim = fileSrc;
                 //update chosen file textView with filesrc
                 updateChosenFileText(fileSrc);
                 handleFileChosenMediaPlayer();
-                int fileDuration = getAudioFileDuration(fileSrc);
-                configureSeekBars(fileDuration - (int)(fileDuration*0.1));
-                // update trimAndLoop buttons to clickable
-                setTrimAndLoopClickability(true);
+                btnTrimAndLoop.setEnabled(true);
             }
         }
         super.onActivityResult(requestCode, resultCode, data);
-    }
-
-    private void configureSeekBars(int fileDuration) {
-        seekBarStartTime.setMax(fileDuration/2);
-        seekBarEndTime.setMax(fileDuration/2);
     }
 
     /**
@@ -729,29 +348,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
 
     /**
-     * Returns the duration of the audio file found at the given path.
-     * If anything went wrong, 0 will be returned.
+     * Resets media player and creates a new instance with the file path passed to it.
+     * @param filePath is the file path string of the file.
      */
-    private int getAudioFileDuration(String filePath) {
-        int duration = 0;
-        try {
-            MediaMetadataRetriever mmr = new MediaMetadataRetriever();
-            mmr.setDataSource(filePath);
-            String strDuration = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
-            mmr.release();
-            duration = Integer.parseInt(strDuration);
-        } catch (Exception e) {
-            // nothing to be done
-        }
-        return duration;
-    }
-
-    private void mediaPlayer(String filePath){
+    private void resetMediaPlayer(String filePath){
         if (mediaPlayer != null) {
             mediaPlayer.reset();
         }
         mediaPlayer = MediaPlayer.create(this, Uri.fromFile(new File(filePath)));
-
     }
 
     /**
