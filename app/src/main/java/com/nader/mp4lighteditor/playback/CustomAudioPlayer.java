@@ -1,9 +1,11 @@
-package com.nader.mp4lighteditor;
+package com.nader.mp4lighteditor.playback;
 
 import android.content.Context;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
 import android.widget.LinearLayout;
+
+import com.nader.mp4lighteditor.R;
 
 /**
  * Created by Nader on 06-Feb-17.

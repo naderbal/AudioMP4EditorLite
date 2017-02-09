@@ -1,4 +1,4 @@
-package com.nader.mp4lighteditor;
+package com.nader.mp4lighteditor.playback;
 
 import android.media.MediaPlayer;
 import android.net.Uri;
@@ -13,6 +13,8 @@ import android.widget.Button;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
+import com.nader.mp4lighteditor.R;
+
 import java.io.File;
 
 
@@ -22,7 +24,7 @@ public class AudioPlayerFragment extends Fragment {
     private SeekBar seekChosenAudio;
     private TextView tvAudioCurrentPosition;
     boolean isAudioFilePlaying = false;
-    private Handler myHandler;
+    private Handler myHandler = new Handler();
     //Integer which increments with the runnable of audio track
     int runnableTimeCounter = 0;
 
@@ -59,7 +61,6 @@ public class AudioPlayerFragment extends Fragment {
                 }
             }
         });
-        myHandler = new Handler();
         tvAudioCurrentPosition = (TextView) view.findViewById(R.id.tvAudioCurrentPosition);
         tvAudioCurrentPosition.setText("0.0s");
     }

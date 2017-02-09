@@ -1,7 +1,8 @@
-package com.nader.mp4lighteditor;
+package com.nader.mp4lighteditor.recording;
 
 import android.Manifest;
 import android.app.DialogFragment;
+import android.content.Context;
 import android.content.pm.PackageManager;
 import android.media.MediaRecorder;
 import android.os.Bundle;
@@ -15,38 +16,83 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
-import android.widget.Toast;
+
+import com.nader.mp4lighteditor.R;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.Timer;
 import java.util.TimerTask;
 
 
+/**
+ * TODO remove audio output path definition from here, it should be an argument
+ */
 public class RecorderDialogFragment extends DialogFragment implements View.OnClickListener {
     final Handler handler = new Handler();
-    int secondsCounter = 0;
+    // callback
+    OnRecordingSavedListener fragmentListener;
+    // recorder state
+    public enum RecordButtonState {
+        START_PRESSED, STOP_PRESSED
+    }
+    // views
     private Button btnRecord;
     private Button btnCancel;
     private Button btnSave;
-    private MediaRecorder mediaRecorder;
-    private File audioFile;
-    private String filePath;
+    private LinearLayout llRecorded;
+    // timer
     private Timer timer;
     private TimerTask timerTask;
-    private LinearLayout llRecorded;
+    int secondsCounter = 0;
+    // recorder
+    private MediaRecorder mediaRecorder;
     private RecordButtonState recordButtonState = RecordButtonState.STOP_PRESSED;
-    private MainActivity.OnRecordingSavedListener listener;
+    private File audioFile;
+    private String filePath;
+
     @Nullable
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         View rootView = inflater.inflate(R.layout.fragment_record_dialog, container, false);
-        init(rootView);
         return rootView;
     }
 
-    private void init(View rootView) {
+    @Override
+    public void onViewCreated(View view, Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
 
+        init(view);
+        checkNeededPermission();
+        defineAudioOutput();
+        setSaveAndCancelButtonActivation(false);
+        updateRecordingButtonText();
+    }
+
+    @Override
+    public void onAttach(Context context) {
+        if (context instanceof OnRecordingSavedListener) {
+            fragmentListener = (OnRecordingSavedListener) context;
+        } else {
+            throw new IllegalStateException("Parent must implement OnRecordingSavedListener");
+        }
+        super.onAttach(context);
+    }
+
+    @Override
+    public void onDetach() {
+        super.onDetach();
+        fragmentListener = null;
+        //reset the media recording when dialog fragment is detached
+        if (mediaRecorder != null) {
+            mediaRecorder.reset();
+            mediaRecorder = null;
+        }
+    }
+
+    /**
+     * TODO?
+     */
+    private void checkNeededPermission() {
         if (ContextCompat.checkSelfPermission(getActivity(),
                 Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
 
@@ -54,18 +100,27 @@ public class RecorderDialogFragment extends DialogFragment implements View.OnCli
                     new String[]{Manifest.permission.RECORD_AUDIO},
                     1);
         }
+    }
+
+    /**
+     * Initializes the fragment's views.
+     */
+    private void init(View rootView) {
+        // init views
         btnRecord = (Button) rootView.findViewById(R.id.btnRecord);
-        btnRecord.setOnClickListener(this);
         btnCancel = (Button) rootView.findViewById(R.id.btnCancelRecorded);
-        btnCancel.setOnClickListener(this);
         btnSave = (Button) rootView.findViewById(R.id.btnSaveRecorded);
-        btnSave.setOnClickListener(this);
         llRecorded = (LinearLayout) rootView.findViewById(R.id.llRecorded);
+        // set click events
+        btnRecord.setOnClickListener(this);
+        btnCancel.setOnClickListener(this);
+        btnSave.setOnClickListener(this);
+    }
+
+    private void defineAudioOutput() {
         //create file in external memory, in our folder with name plus timestamp
         filePath = Environment.getExternalStorageDirectory().getPath()+ "/mp4Test/audioMP4"+System.currentTimeMillis()+".mp4";
         audioFile = new File(filePath);
-        setSaveAndCancelButtonActivation(false);
-        updateRecordingButtonText();
     }
 
     /**
@@ -76,9 +131,7 @@ public class RecorderDialogFragment extends DialogFragment implements View.OnCli
         setSaveAndCancelButtonOpacity(state);
     }
 
-    public void setListener(MainActivity.OnRecordingSavedListener listnener){
-        this.listener = listnener;
-    }
+    // TIMER //
 
     public void startTimer() {
         //set a new Timer
@@ -112,13 +165,14 @@ public class RecorderDialogFragment extends DialogFragment implements View.OnCli
     }
 
     /**
-     * Updates the timing text of the record button
+     * Updates the timing text of the record button.
+     * Initially it is set to 0.
      */
     private void updateRecordingButtonText() {
-        //set the timer string format,(0:00)
+        // set the timer string format,(0:00)
         String time = String.format("%01d:%02d",
                 (secondsCounter % 3600) / 60, (secondsCounter % 60));
-        //set the time string text to record button
+        // set the time string text to record button
         btnRecord.setText(time);
     }
 
@@ -127,20 +181,18 @@ public class RecorderDialogFragment extends DialogFragment implements View.OnCli
      * @return true if prepare was successful, false otherwise
      */
     private boolean resetRecorder() {
-        //set audio source to microphone
-        mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
-        //set output format to mp4
-        mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
-        //set encoding to aac
-        mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
-        //set output file
-        mediaRecorder.setOutputFile(audioFile.getAbsolutePath());
         try {
+            //set audio source to microphone
+            mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
+            //set output format to mp4
+            mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+            //set encoding to aac
+            mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+            //set output file
+            mediaRecorder.setOutputFile(audioFile.getAbsolutePath());
             //try to prepare the media recorder
             mediaRecorder.prepare();
-        } catch (IllegalStateException e) {
-            return false;
-        } catch (IOException e) {
+        } catch (Exception e) {
             return false;
         }
         return true;
@@ -269,31 +321,37 @@ public class RecorderDialogFragment extends DialogFragment implements View.OnCli
             mediaRecorder.stop();
             mediaRecorder.reset();
             mediaRecorder.release();
-            listener.onSaved(filePath);
             mediaRecorder = null;
             //set save and cancel buttons to unclickable
             setSaveAndCancelButtonActivation(false);
-            //show toast conforming the successful saving of the recorded audio file
-            Toast.makeText(getActivity(), "Audio file saved", Toast.LENGTH_SHORT).show();
-            dismiss();
+            // inform parent
+            if (fragmentListener != null) {
+                fragmentListener.onSaved(filePath);
+            }
         } catch (Exception e) {
-            //show toast saying that the saving of the recorded audio file failed
-            Toast.makeText(getActivity(), "Audio failed to save", Toast.LENGTH_SHORT).show();
+            if (fragmentListener != null) {
+                fragmentListener.onFailed();
+            }
         }
+        dismiss();
     }
 
-    @Override
-    public void onDetach() {
-        super.onDetach();
-        //reset the media recording when dialog fragment is detached
-        if (mediaRecorder != null) {
-            mediaRecorder.reset();
-            mediaRecorder = null;
-        }
-    }
+    // CALLBACKS //
 
+    /**
+     * Interface definition for callbacks to be invoked
+     * when events occur in the {@link RecorderDialogFragment}.
+     */
+    public interface OnRecordingSavedListener {
+        /**
+         * Called when audio file saving successfully done.
+         * @param filePath The path of the saved file.
+         */
+        void onSaved(String filePath);
 
-    public enum RecordButtonState {
-        START_PRESSED, STOP_PRESSED
+        /**
+         * Called when an error occurs during file saving.
+         */
+        void onFailed();
     }
 }

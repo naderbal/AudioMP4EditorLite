@@ -24,6 +24,7 @@ import com.googlecode.mp4parser.authoring.builder.DefaultMp4Builder;
 import com.googlecode.mp4parser.authoring.container.mp4.MovieCreator;
 import com.googlecode.mp4parser.authoring.tracks.AppendTrack;
 import com.googlecode.mp4parser.authoring.tracks.CroppedTrack;
+import com.nader.mp4lighteditor.playback.AudioPlayerFragment;
 
 import java.io.File;
 import java.io.FileOutputStream;
