@@ -51,7 +51,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     /**
      * init Audio Player Fragment
-     * 
+     *
      */
     private void initAudioPlayerFragment() {
         Fragment audioPlayerFragment = new AudioPlayerFragment();
