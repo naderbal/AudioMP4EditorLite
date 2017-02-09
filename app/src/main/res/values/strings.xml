@@ -1,3 +1,12 @@
 <resources>
     <string name="app_name">MP4LightEditor</string>
+    <string name="record_audio">Record Audio</string>
+    <string name="choose_file">Choose File</string>
+    <string name="file_chosen">File Chosen</string>
+    <string name="trim_and_loop">trim and Loop</string>
+    <string name="trim">Trim:</string>
+    <string name="loop">Loop:</string>
+    <string name="minus">-</string>
+    <string name="plus">+</string>
+    <string name="looped_file_path">sdcard/mp4Test/mergedFile</string>
 </resources>

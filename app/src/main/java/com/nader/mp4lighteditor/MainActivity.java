@@ -1,6 +1,5 @@
 package com.nader.mp4lighteditor;
 
-import android.Manifest;
 import android.app.FragmentManager;
 import android.content.ContentUris;
 import android.content.Context;
@@ -14,11 +13,12 @@ import android.os.Handler;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.support.annotation.RequiresApi;
+import android.support.v4.app.Fragment;
+import android.support.v4.app.FragmentTransaction;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
-import android.widget.LinearLayout;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import java.io.File;
@@ -30,20 +30,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private Button btnChooseFile;
     private TextView tvChosenFile;
     private String fileSrc;
-    private Button btnChosenFilePlayAudio;
-    private MediaPlayer mediaPlayer;
-    private SeekBar seekChosenAudio;
-    private Handler myHandler;
     private Button btnTrimAndLoop;
-    private TextView tvAudioCurrentPosition;
-    boolean isAudioFilePlaying = false;
     private OnRecordingSavedListener listener = new OnRecordingSavedListener() {
         @Override
         public void onSaved(String filePath) {
             fileSrc = filePath;
             btnTrimAndLoop.setEnabled(true);
             updateChosenFileText(fileSrc);
-            handleFileChosenMediaPlayer();
+            handleFileChosenMediaPlayer(fileSrc);
         }
     };
 
@@ -52,6 +46,18 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         init();
+        initAudioPlayerFragment();
+    }
+
+    /**
+     * init Audio Player Fragment
+     * 
+     */
+    private void initAudioPlayerFragment() {
+        Fragment audioPlayerFragment = new AudioPlayerFragment();
+        FragmentTransaction transaction = getSupportFragmentManager().beginTransaction();
+        transaction.replace(R.id.frmFragment, audioPlayerFragment, "audioPlayerFragment");
+        transaction.commit();
     }
 
 
@@ -64,44 +70,16 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         btnTrimAndLoop.setEnabled(false);
         btnTrimAndLoop.setOnClickListener(this);
         tvChosenFile = (TextView) findViewById(R.id.tvChosenFile);
-        seekChosenAudio = (SeekBar) findViewById(R.id.seekPlayChosenAudio);
-        seekChosenAudio.setClickable(false);
-        myHandler = new Handler();
-        btnChosenFilePlayAudio = (Button) findViewById(R.id.btnChosenFilePlayAudio);
-        setPlayButtonEnabled(false);
-        btnChosenFilePlayAudio.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                handlePlayClicked();
-                if (!isAudioFilePlaying) {
-                    btnChosenFilePlayAudio.setBackgroundResource(R.drawable.ic_pause_black_24dp);
-                    isAudioFilePlaying = true;
-                }else {
-                    btnChosenFilePlayAudio.setBackgroundResource(R.drawable.ic_play_arrow_black_24dp);
-                    isAudioFilePlaying = false;
-                }
-            }
-        });
-        tvAudioCurrentPosition = (TextView) findViewById(R.id.tvAudioCurrentPosition);
-        tvAudioCurrentPosition.setText("0.0s");
     }
 
-    /**
-     * Sets play button to enabled or not.
-     */
-    private void setPlayButtonEnabled(boolean enabled) {
-        if (enabled) btnChosenFilePlayAudio.setBackgroundResource(R.drawable.ic_play_arrow_black_24dp);
-        else btnChosenFilePlayAudio.setBackgroundResource(R.drawable.ic_play_arrow_faded_24dp);
-        btnChosenFilePlayAudio.setEnabled(enabled);
-    }
 
     /**
      * Handles media player when file is chosen or recorded
      */
-    private void handleFileChosenMediaPlayer() {
-        resetMediaPlayer(fileSrc);
-        seekChosenAudio.setMax(mediaPlayer.getDuration());
-        setPlayButtonEnabled(true);
+    private void handleFileChosenMediaPlayer(String fileSrc) {
+        AudioPlayerFragment articleFrag = (AudioPlayerFragment)
+                getSupportFragmentManager().findFragmentById(R.id.frmFragment);
+        articleFrag.updateFileSrc(fileSrc);
     }
 
     /**
@@ -158,6 +136,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             return uri.getPath();
         }
         return null;
+
     }
 
     /**
@@ -216,58 +195,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
 
 
-    /**
-     * Handles the actions of pressing the media play button.
-     */
-    private void handlePlayClicked() {
-        //run updateTrackTime after 100ms
-        myHandler.postDelayed(UpdateTrackTime, 100);
-        //if already playing, pause
-        if (mediaPlayer.isPlaying()){
-            mediaPlayer.pause();
-        }
-        //else start from from beginning or last time paused
-        else {
-            mediaPlayer.start();
-        }
-    }
-
-    int runnableCounter = 0;
-    private Runnable UpdateTrackTime = new Runnable() {
-        public void run() {
-            //if time passed is less than the track's duration
-            if (runnableCounter <= mediaPlayer.getDuration()) {
-                //if the track is running
-                if ((isAudioFilePlaying)) {
-                    //get current position of the track
-                    int mediaPlayerPosition = mediaPlayer.getCurrentPosition();
-                    //change the ms to seconds with one decimal and set value to the text view of the seek bar
-                    int value = mediaPlayerPosition/100;
-                    tvAudioCurrentPosition.setText(value / 10.0 + "s");
-                    //update process of seek bar
-                    seekChosenAudio.setProgress(mediaPlayerPosition);
-                    //re run after 100ms delay
-                    myHandler.postDelayed(this, 100);
-                    //increment counter by 100 (100ms)
-                    runnableCounter += 100;
-                }
-            }
-            else{
-                //else the track reached it's end
-                //set seek bar to start
-                seekChosenAudio.setProgress(0);
-                //set text of text view of the seek bar to 0.0s
-                tvAudioCurrentPosition.setText("0.0s");
-                //change value of is playing to false
-                isAudioFilePlaying = false;
-                //change icon from pause to play
-                btnChosenFilePlayAudio.setBackgroundResource(R.drawable.ic_play_arrow_black_24dp);
-                //set counter to 0
-                runnableCounter = 0;
-            }
-        }
-    };
-
     @Override
     public void onClick(View view) {
         switch (view.getId()) {
@@ -301,7 +228,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         //init new RecorderDialogFragment
         RecorderDialogFragment dialogFragment = new RecorderDialogFragment();
         //show fragment
-        dialogFragment.show(fm, "Sample Fragment");
+        dialogFragment.show(fm, "dialogFragment");
         //pass listener to dialogFragment
         dialogFragment.setListener(listener);
     }
@@ -333,11 +260,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 fileSrc = getPath(this, uri);
                 //update chosen file textView with filesrc
                 updateChosenFileText(fileSrc);
-                handleFileChosenMediaPlayer();
+                handleFileChosenMediaPlayer(fileSrc);
                 btnTrimAndLoop.setEnabled(true);
             }
         }
         super.onActivityResult(requestCode, resultCode, data);
+
     }
 
     /**
@@ -345,17 +273,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
      */
     private void updateChosenFileText(String text) {
         tvChosenFile.setText(text);
-    }
-
-    /**
-     * Resets media player and creates a new instance with the file path passed to it.
-     * @param filePath is the file path string of the file.
-     */
-    private void resetMediaPlayer(String filePath){
-        if (mediaPlayer != null) {
-            mediaPlayer.reset();
-        }
-        mediaPlayer = MediaPlayer.create(this, Uri.fromFile(new File(filePath)));
     }
 
     /**

@@ -5,14 +5,12 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.media.MediaMetadataRetriever;
-import android.media.MediaPlayer;
-import android.net.Uri;
 import android.os.Environment;
-import android.os.Handler;
 import android.support.v4.app.ActivityCompat;
+import android.support.v4.app.Fragment;
+import android.support.v4.app.FragmentTransaction;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
-import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.SeekBar;
@@ -48,14 +46,8 @@ public class TrimAndLoopActivity extends AppCompatActivity implements View.OnCli
     private Button btnAdd;
     private Button btnSubtract;
     private TextView tvSavedFile;
-    private Button btnLoopedPlayAudio;
-    private SeekBar seekLoopedAudio;
-    private MediaPlayer mediaPlayer;
-    private Handler myHandler;
     private TextView tvLoop;
-    boolean isLoopedPlaying = false;
     private String fileSrc;
-    private TextView tvAudioCurrentPosition;
     private static String[] PERMISSIONS_STORAGE = {
             Manifest.permission.READ_EXTERNAL_STORAGE,
             Manifest.permission.WRITE_EXTERNAL_STORAGE
@@ -68,13 +60,18 @@ public class TrimAndLoopActivity extends AppCompatActivity implements View.OnCli
         Intent intent = getIntent();
         fileSrc = intent.getStringExtra("fileSrc");
         init();
+        initAudioPlayerFragment();
+    }
+    private void initAudioPlayerFragment() {
+        Fragment audioPlayerFragment = new AudioPlayerFragment();
+        FragmentTransaction transaction = getSupportFragmentManager().beginTransaction();
+        transaction.replace(R.id.frmFragment, audioPlayerFragment, "audioPlayerFragment");
+        transaction.commit();
     }
 
     private void init() {
         btnTrimAndLoop = (Button) findViewById(R.id.btnTrimAndLoop);
         btnTrimAndLoop.setOnClickListener(this);
-        seekLoopedAudio = (SeekBar) findViewById(R.id.seekPlayLoopedAudio);
-        seekLoopedAudio.setClickable(false);
         tvSeekStart = (TextView) findViewById(R.id.txtSeekStart);
         tvSeekEnd = (TextView) findViewById(R.id.txtSeekEnd);
         seekBarStartTime = (SeekBar) findViewById(R.id.seekStart);
@@ -102,7 +99,6 @@ public class TrimAndLoopActivity extends AppCompatActivity implements View.OnCli
 
             }
         });
-        myHandler = new Handler();
         seekBarEndTime = (SeekBar) findViewById(R.id.seekEnd);
         seekBarEndTime.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
@@ -127,90 +123,7 @@ public class TrimAndLoopActivity extends AppCompatActivity implements View.OnCli
         //set seek bar limit to 90% of file duration
         configureSeekBars(fileDuration - (int)(fileDuration*0.1));
         tvSavedFile = (TextView) findViewById(R.id.tvSavedFile);
-        btnLoopedPlayAudio = (Button) findViewById(R.id.btnLoopedPlayAudio);
-        //disable play button
-        setPlayButtonEnabled(false);
-        btnLoopedPlayAudio.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                handlePlayClicked();
-                if (!isLoopedPlaying) {
-                    btnLoopedPlayAudio.setBackgroundResource(R.drawable.ic_pause_black_24dp);
-                    isLoopedPlaying = true;
-                }else {
-                    btnLoopedPlayAudio.setBackgroundResource(R.drawable.ic_play_arrow_black_24dp);
-                    isLoopedPlaying = false;
-                }
-            }
-        });
-        tvAudioCurrentPosition = (TextView) findViewById(R.id.tvAudioCurrentPosition);
-        //initialize text view of player
-        tvAudioCurrentPosition.setText("0.0s");
     }
-
-    /**
-     * Sets media player play button to enable or not.
-     */
-    private void setPlayButtonEnabled(boolean enabled) {
-       //if true set button drawable to black version
-        if (enabled) btnLoopedPlayAudio.setBackgroundResource(R.drawable.ic_play_arrow_black_24dp);
-        //else set button drawable to faded version
-        else btnLoopedPlayAudio.setBackgroundResource(R.drawable.ic_play_arrow_faded_24dp);
-        //set button to enabled
-        btnLoopedPlayAudio.setEnabled(enabled);
-    }
-
-    /**
-     * Handles play button clicked.
-     */
-    private void handlePlayClicked() {
-        //run  after 100ms
-        myHandler.postDelayed(UpdateTrackTime,100);
-            //if is playing, pause media player
-            if (mediaPlayer.isPlaying()){
-                mediaPlayer.pause();
-            }
-            else {
-                //else start media player
-                mediaPlayer.start();
-            }
-    }
-
-    int runnableCounter = 0;
-    private Runnable UpdateTrackTime = new Runnable() {
-        public void run() {
-            //if time passed is less than the track's duration
-            if (runnableCounter <= mediaPlayer.getDuration()) {
-                //if the track is running
-                if (isLoopedPlaying) {
-                    //get current position of the track
-                    int mediaPlayerPosition = mediaPlayer.getCurrentPosition();
-                    //change the ms to seconds with one decimal and set value to the text view of the seek bar
-                    int value = mediaPlayerPosition/100;
-                    tvAudioCurrentPosition.setText(value / 10.0 + "s");
-                    //update process of seek bar
-                    seekLoopedAudio.setProgress(mediaPlayerPosition);
-                    //re run after 100ms delay
-                    myHandler.postDelayed(this, 100);
-                    //increment counter by 100 (100ms)
-                    runnableCounter += 100;
-                }
-            }
-            else{
-                //else the track reached it's end
-                //set seek bar to start
-                seekLoopedAudio.setProgress(0);
-                //set text of text view of the seek bar to 0.0s
-                tvAudioCurrentPosition.setText("0.0s");
-                //change value of is playing to false
-                isLoopedPlaying = false;
-                //change icon from pause to play
-                btnLoopedPlayAudio.setBackgroundResource(R.drawable.ic_play_arrow_black_24dp);
-                //set counter to 0
-                runnableCounter = 0;
-            }
-        }
-    };
 
     @Override
     public void onClick(View view) {
@@ -449,7 +362,7 @@ public class TrimAndLoopActivity extends AppCompatActivity implements View.OnCli
             container.writeContainer(fc);
             Toast.makeText(this, "File was saved", Toast.LENGTH_SHORT).show();
             tvSavedFile.setText("File Saved: "+outputFile.getPath());
-            handleFileLoopedMediaPlayer(outputFile);
+            handleLoopedFileSaved(outputFile.getPath());
 
         } catch (Exception e) {
             Toast.makeText(this, "File failed to be saved", Toast.LENGTH_SHORT).show();
@@ -461,14 +374,20 @@ public class TrimAndLoopActivity extends AppCompatActivity implements View.OnCli
         }
     }
 
-    private void handleFileLoopedMediaPlayer(File outputFile) {
-        //init media player
-        mediaPlayer(outputFile.getPath());
-        seekLoopedAudio.setMax(mediaPlayer.getDuration());
-        //btnChosenFilePlayAudio.setEnabled(false);
-        setPlayButtonEnabled(true);
+    /**
+     * Handles the evenet of saving a new audio file
+     * @param fileSrc is the path of the saved file
+     */
+    private void handleLoopedFileSaved(String fileSrc) {
+        AudioPlayerFragment articleFrag = (AudioPlayerFragment)
+                getSupportFragmentManager().findFragmentById(R.id.frmFragment);
+        articleFrag.updateFileSrc(fileSrc);
     }
 
+    /**
+     * Configure Seek bars according to passed audio duration
+     * @param fileDuration is the duration of the file
+     */
     private void configureSeekBars(int fileDuration) {
         seekBarStartTime.setMax(fileDuration/2);
         seekBarEndTime.setMax(fileDuration/2);
@@ -490,14 +409,6 @@ public class TrimAndLoopActivity extends AppCompatActivity implements View.OnCli
             // nothing to be done
         }
         return duration;
-    }
-
-    private void mediaPlayer(String filePath){
-        if (mediaPlayer != null) {
-            mediaPlayer.reset();
-        }
-        mediaPlayer = MediaPlayer.create(this, Uri.fromFile(new File(filePath)));
-
     }
 
     /**
